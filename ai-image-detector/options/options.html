@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>NeuroCheck - Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="options-container">
+    <header>
+      <h1>NeuroCheck Settings</h1>
+    </header>
+    
+    <section class="section">
+      <h2>Website Blacklist</h2>
+      <p class="section-description">
+        The detector will not run on these websites to improve performance and avoid interference with video content.
+      </p>
+      
+      <div class="blacklist-container">
+        <div class="add-domain">
+          <input 
+            type="text" 
+            id="domain-input" 
+            placeholder="Enter domain (e.g., example.com)"
+            aria-label="Domain to add to blacklist"
+          >
+          <button id="add-button" class="primary-button">Add Domain</button>
+        </div>
+        
+        <div id="blacklist-items" class="blacklist-items">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </section>
+    
+    <section class="section">
+      <h2>Performance</h2>
+      <p class="section-description">
+        The extension uses on-device AI processing. No images are sent to external servers.
+      </p>
+      
+      <div class="info-box">
+        <h3>Resource Usage</h3>
+        <ul>
+          <li>Processes medium-sized images (150px - 1024px)</li>
+          <li>Uses WebGPU when available for faster inference</li>
+          <li>Implements batching to prevent UI freezing</li>
+        </ul>
+      </div>
+    </section>
+    
+    <section class="section">
+      <h2>Privacy</h2>
+      <div class="info-box">
+        <p>
+          <strong>Your privacy is protected:</strong>
+        </p>
+        <ul>
+          <li>All processing happens locally on your device</li>
+          <li>No images or data are sent to any server</li>
+          <li>No tracking or analytics</li>
+        </ul>
+      </div>
+    </section>
+    
+    <footer>
+      <button id="reset-button" class="secondary-button">Reset to Defaults</button>
+      <div class="status-message" id="status-message"></div>
+    </footer>
+  </div>
+  
+  <script src="options.js"></script>
+</body>
+</html>

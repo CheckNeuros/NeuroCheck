@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>NeuroCheck - Test Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        .warning { background: #fff3cd; color: #856404; }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        #imagePreview {
+            max-width: 300px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>NeuroCheck - Test Page</h1>
+        
+        <div id="status"></div>
+        
+        <h2>1. Test ONNX Runtime Loading</h2>
+        <button onclick="testONNXLoad()">Test ONNX Load</button>
+        <div id="onnxStatus"></div>
+        
+        <h2>2. Test Model Loading</h2>
+        <button onclick="testModelLoad()">Test Model Load</button>
+        <div id="modelStatus"></div>
+        
+        <h2>3. Test Image Detection</h2>
+        <input type="file" id="imageInput" accept="image/*" onchange="handleImageSelect(event)">
+        <img id="imagePreview" style="display:none;">
+        <button onclick="testInference()" disabled id="inferenceBtn">Run Detection</button>
+        <div id="inferenceStatus"></div>
+        
+        <h2>4. Background Script Status</h2>
+        <button onclick="checkBackground()">Check Background</button>
+        <div id="backgroundStatus"></div>
+    </div>
+
+    <script>
+        const log = (msg, type = 'info') => {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            document.getElementById('status').appendChild(div);
+        };
+
+        // Test ONNX Runtime loading
+        async function testONNXLoad() {
+            const status = document.getElementById('onnxStatus');
+            try {
+                status.innerHTML = '<div class="status info">Loading ONNX Runtime...</div>';
+                
+                const script = document.createElement('script');
+                script.src = 'model/ort.min.js';
+                
+                await new Promise((resolve, reject) => {
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+                
+                if (typeof ort !== 'undefined') {
+                    status.innerHTML = `<div class="status success">✓ ONNX Runtime loaded! Version: ${ort.env.versions.ort}</div>`;
+                    log('ONNX Runtime loaded successfully', 'success');
+                } else {
+                    throw new Error('ONNX Runtime not found after loading');
+                }
+            } catch (error) {
+                status.innerHTML = `<div class="status error">✗ Failed to load ONNX Runtime: ${error.message}</div>`;
+                log(`ONNX load error: ${error.message}`, 'error');
+            }
+        }
+
+        // Test model loading
+        async function testModelLoad() {
+            const status = document.getElementById('modelStatus');
+            
+            if (typeof ort === 'undefined') {
+                status.innerHTML = '<div class="status error">Please load ONNX Runtime first</div>';
+                return;
+            }
+            
+            try {
+                status.innerHTML = '<div class="status info">Loading model...</div>';
+                
+                // Configure WASM paths
+                ort.env.wasm.wasmPaths = 'model/';
+                ort.env.wasm.numThreads = 1;
+                ort.env.wasm.simd = false;
+                
+                const session = await ort.InferenceSession.create('model/model.onnx', {
+                    executionProviders: ['wasm']
+                });
+                
+                // Test with dummy input
+                const dummyTensor = new ort.Tensor('float32', new Float32Array(256 * 256 * 3), [1, 256, 256, 3]);
+                const results = await session.run({ input: dummyTensor });
+                
+                status.innerHTML = `<div class="status success">✓ Model loaded! Output shape: ${results.output.dims}</div>`;
+                log('Model loaded and tested successfully', 'success');
+                
+                window.testSession = session;
+            } catch (error) {
+                status.innerHTML = `<div class="status error">✗ Failed to load model: ${error.message}</div>`;
+                log(`Model load error: ${error.message}`, 'error');
+            }
+        }
+
+        // Handle image selection
+        let selectedImageData = null;
+        
+        function handleImageSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = document.getElementById('imagePreview');
+                img.src = e.target.result;
+                img.style.display = 'block';
+                img.onload = () => {
+                    // Extract image data
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 256;
+                    canvas.height = 256;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, 256, 256);
+                    
+                    const imageData = ctx.getImageData(0, 0, 256, 256);
+                    const pixels = imageData.data;
+                    
+                    selectedImageData = new Float32Array(256 * 256 * 3);
+                    
+                    // Convert to HWC format
+                    for (let h = 0; h < 256; h++) {
+                        for (let w = 0; w < 256; w++) {
+                            for (let c = 0; c < 3; c++) {
+                                const srcIdx = (h * 256 + w) * 4 + c;
+                                const dstIdx = h * 256 * 3 + w * 3 + c;
+                                selectedImageData[dstIdx] = pixels[srcIdx] / 255.0;
+                            }
+                        }
+                    }
+                    
+                    document.getElementById('inferenceBtn').disabled = false;
+                    log('Image loaded and preprocessed', 'info');
+                };
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Test inference
+        async function testInference() {
+            const status = document.getElementById('inferenceStatus');
+            
+            if (!window.testSession) {
+                status.innerHTML = '<div class="status error">Please load model first</div>';
+                return;
+            }
+            
+            if (!selectedImageData) {
+                status.innerHTML = '<div class="status error">Please select an image first</div>';
+                return;
+            }
+            
+            try {
+                status.innerHTML = '<div class="status info">Running inference...</div>';
+                
+                const tensor = new ort.Tensor('float32', selectedImageData, [1, 256, 256, 3]);
+                const start = performance.now();
+                const results = await window.testSession.run({ input: tensor });
+                const elapsed = performance.now() - start;
+                
+                const output = results.output.data[0];
+                let probability;
+                
+                // Handle different output formats
+                if (output < -10 || output > 10) {
+                    probability = 1 / (1 + Math.exp(-output));
+                } else if (output < 0 || output > 1) {
+                    probability = 1 / (1 + Math.exp(-output));
+                } else {
+                    probability = output;
+                }
+                
+                const isAI = probability > 0.5;
+                const confidence = isAI ? probability : (1 - probability);
+                
+                status.innerHTML = `
+                    <div class="status ${isAI ? 'warning' : 'success'}">
+                        Result: ${isAI ? 'AI Generated' : 'Real'} (${(confidence * 100).toFixed(1)}% confidence)
+                        <br>Inference time: ${elapsed.toFixed(1)}ms
+                        <br>Raw output: ${output}
+                    </div>
+                `;
+                
+                log(`Detection complete: ${isAI ? 'AI' : 'Real'} (${elapsed.toFixed(1)}ms)`, 'success');
+            } catch (error) {
+                status.innerHTML = `<div class="status error">✗ Inference failed: ${error.message}</div>`;
+                log(`Inference error: ${error.message}`, 'error');
+            }
+        }
+
+        // Check background script
+        async function checkBackground() {
+            const status = document.getElementById('backgroundStatus');
+            
+            try {
+                const response = await chrome.runtime.sendMessage({ type: 'CHECK_MODEL_READY' });
+                
+                if (response.modelReady) {
+                    status.innerHTML = '<div class="status success">✓ Background script ready, model loaded</div>';
+                    
+                    // Test inference through background
+                    if (selectedImageData) {
+                        const inferenceResponse = await chrome.runtime.sendMessage({
+                            type: 'RUN_INFERENCE',
+                            imageData: Array.from(selectedImageData)
+                        });
+                        
+                        if (inferenceResponse.error) {
+                            status.innerHTML += `<div class="status error">Background inference error: ${inferenceResponse.error}</div>`;
+                        } else {
+                            status.innerHTML += `<div class="status success">Background inference successful! Output: ${inferenceResponse.outputData}</div>`;
+                        }
+                    }
+                } else {
+                    status.innerHTML = '<div class="status warning">Background script running but model not ready</div>';
+                }
+            } catch (error) {
+                status.innerHTML = `<div class="status error">✗ Cannot connect to background: ${error.message}</div>`;
+            }
+        }
+
+        // Auto-check on load
+        window.addEventListener('load', () => {
+            log('Test page loaded', 'info');
+            setTimeout(checkBackground, 1000);
+        });
+    </script>
+</body>
+</html>
